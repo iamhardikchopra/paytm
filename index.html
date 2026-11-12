@@ -1,0 +1,411 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Bill Status Loop</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: annotated prototype. Phone on the left, "what changed" notes on the right; stacks on phones. */
+:root{
+  --bg:#f3f5f8; --fg:#14213d; --muted:#5b6478; --line:#dfe4ec; --panel:#ffffff;
+  --accent:#0b5fd6; --accent-soft:#e7f0fd;
+  /* app (prototype) palette stays light in both themes, like a real phone screen */
+  --app-bg:#f4f6f9; --app-card:#ffffff; --app-ink:#151b2b; --app-sub:#5e677a; --app-line:#e6e9ef;
+  --app-navy:#0b2a6b; --app-blue:#0b78e3; --app-blue-soft:#e8f3fe;
+  --ok:#14804a; --ok-soft:#e5f5ec; --warn:#b45309; --warn-soft:#fdf1e3; --due:#c2410c;
+  --display:"Space Grotesk",system-ui,sans-serif; --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1420; --fg:#e7ebf3; --muted:#9aa4b8; --line:#273047; --panel:#161d2c; --accent:#6aa6ff; --accent-soft:#1c2a45; color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1420; --fg:#e7ebf3; --muted:#9aa4b8; --line:#273047; --panel:#161d2c; --accent:#6aa6ff; --accent-soft:#1c2a45; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 40px}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header h1{font-family:var(--display);font-size:clamp(22px,3.4vw,30px);margin:0;text-wrap:balance}
+header p{margin:6px 0 0;color:var(--muted);max-width:68ch}
+.tag{display:inline-block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 10px;margin-bottom:8px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:transparent;color:var(--fg);font:500 13px var(--body);padding:8px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.ghost{border:1px solid var(--line);background:var(--panel);color:var(--fg);font:500 13px var(--body);padding:8px 12px;border-radius:10px;cursor:pointer}
+button:focus-visible,.tap:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stage{display:grid;grid-template-columns:minmax(0,390px) minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:820px){.stage{grid-template-columns:minmax(0,1fr)}}
+/* journey strip */
+.journey{display:flex;flex-wrap:wrap;gap:6px}
+.journey span{font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+.journey span.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.journey i{align-self:center;color:var(--muted);font-style:normal;font-size:12px}
+/* phone */
+.phone{width:100%;max-width:390px;margin:0 auto;background:#0d1117;border-radius:38px;padding:10px;box-shadow:0 18px 40px rgba(10,20,40,.18)}
+.screen{background:var(--app-bg);color:var(--app-ink);border-radius:30px;overflow:hidden;height:720px;max-height:82vh;min-height:560px;display:flex;flex-direction:column;position:relative}
+.sbar{display:flex;justify-content:space-between;padding:12px 22px 4px;font:600 13px var(--body);color:var(--app-ink)}
+.top{display:flex;align-items:center;gap:10px;padding:8px 16px 10px}
+.top b{font:700 18px var(--body)}
+.back{border:0;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--app-ink);padding:2px 6px}
+.body{flex:1;overflow:auto;padding:4px 14px 18px;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--app-card);border-radius:16px;padding:14px;border:1px solid var(--app-line)}
+.hero{background:var(--app-blue-soft);border-color:transparent}
+.row{display:flex;align-items:center;gap:12px}
+.logo{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font:700 11px var(--body);flex:none}
+.l-ele{background:#fff3e8;color:#c2410c;border:1px solid #f6d6bd}
+.l-mob{background:#fde8e8;color:#c81e1e;border:1px solid #f5c6c6}
+.l-cc{background:#e8eefc;color:#1d3f9a;border:1px solid #c9d6f6}
+.grow{flex:1;min-width:0}
+.t1{font-weight:600;font-size:15px}
+.t2{font-size:13px;color:var(--app-sub)}
+.amt{font:700 26px var(--body);letter-spacing:-.01em}
+.btn{width:100%;border:0;border-radius:12px;background:var(--app-navy);color:#fff;font:600 15px var(--body);padding:13px;cursor:pointer}
+.btn.alt{background:#fff;color:var(--app-navy);border:1.5px solid var(--app-navy)}
+.link{border:0;background:none;color:var(--app-blue);font:600 13px var(--body);cursor:pointer;padding:4px 0}
+.chip{display:inline-block;font:600 12px var(--body);border-radius:999px;padding:3px 9px}
+.c-due{background:var(--warn-soft);color:var(--due)}
+.c-ok{background:var(--ok-soft);color:var(--ok)}
+.c-info{background:#eef1f6;color:var(--app-sub)}
+.tap{cursor:pointer;transition:transform .12s}
+.tap:hover{transform:translateY(-1px)}
+.check{width:64px;height:64px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:34px;margin:6px auto}
+.center{text-align:center}
+.steps{display:flex;flex-direction:column;gap:0;margin-top:4px}
+.step{display:flex;gap:12px;align-items:flex-start;padding-bottom:16px;position:relative}
+.step:not(:last-child)::after{content:"";position:absolute;left:11px;top:24px;bottom:0;width:2px;background:var(--app-line)}
+.step.done:not(:last-child)::after{background:var(--ok)}
+.dot{width:24px;height:24px;border-radius:50%;border:2px solid var(--app-line);background:#fff;flex:none;display:grid;place-items:center;font-size:13px;color:#fff;transition:all .3s}
+.step.done .dot{background:var(--ok);border-color:var(--ok)}
+.ref{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#f1f3f7;border-radius:8px;padding:8px 10px;color:var(--app-ink)}
+.viewfinder{height:300px;border-radius:16px;background:#1b2130;position:relative;display:grid;place-items:center;overflow:hidden}
+.bill{width:70%;height:76%;background:#fbfaf5;border-radius:6px;padding:14px;color:#333;font-size:10px;display:flex;flex-direction:column;gap:6px}
+.bill .qr{width:54px;height:54px;align-self:flex-end;background:
+  repeating-linear-gradient(90deg,#222 0 4px,transparent 4px 8px),repeating-linear-gradient(0deg,#222 0 4px,transparent 4px 8px);opacity:.85}
+.corner{position:absolute;width:40px;height:40px;border:3px solid #4fb3ff}
+.c1{top:18px;left:18px;border-right:0;border-bottom:0}.c2{top:18px;right:18px;border-left:0;border-bottom:0}
+.c3{bottom:18px;left:18px;border-right:0;border-top:0}.c4{bottom:18px;right:18px;border-left:0;border-top:0}
+.scanline{position:absolute;left:10%;right:10%;height:2px;background:#4fb3ff;top:20%;animation:scan 1.6s ease-in-out infinite alternate}
+@keyframes scan{to{top:80%}}
+.vouchers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.vouchers button{border:1.5px solid var(--app-line);background:#fff;border-radius:12px;padding:12px 6px;font:600 12px var(--body);color:var(--app-ink);cursor:pointer}
+.vouchers button[aria-pressed="true"]{border-color:var(--app-blue);background:var(--app-blue-soft)}
+.toast{position:absolute;left:16px;right:16px;bottom:18px;background:#14213d;color:#fff;border-radius:12px;padding:12px 14px;font-size:13px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none}
+.toast.show{opacity:1;transform:none}
+.muted-strip{font-size:11px;color:var(--app-sub);text-align:center;padding:6px 0 0}
+.rebate{font:600 12px var(--body);color:var(--ok);margin-top:4px}
+.promise{background:#eef7f1;border:1px solid #cde9d7;border-radius:12px;padding:10px 12px;font-size:12.5px;color:#14532d;line-height:1.4}
+.promise b{display:block;font-size:13px;margin-bottom:2px}
+.armtag{display:inline-block;font:700 10px var(--body);letter-spacing:.05em;text-transform:uppercase;background:#14213d;color:#fff;border-radius:6px;padding:2px 6px;margin-bottom:6px}
+.sumhead{background:var(--app-navy);color:#fff;border-radius:16px;padding:14px}
+.sumhead .t2{color:#c9d6ef}
+.sec-h{font:600 13px var(--body);color:var(--app-sub);text-transform:uppercase;letter-spacing:.05em;margin:6px 2px 0}
+/* notes */
+.notes{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.notes h2{font-family:var(--display);font-size:20px;margin:0}
+.feat{display:inline-block;background:var(--accent-soft);color:var(--accent);font-weight:600;font-size:12px;border-radius:999px;padding:3px 10px}
+.cmp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+@media (max-width:480px){.cmp{grid-template-columns:minmax(0,1fr)}}
+.cmp div{border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px}
+.cmp h3{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.why{font-size:14px;color:var(--fg);margin:0}
+.src{font-size:12px;color:var(--muted);margin:0}
+.map{font-size:13px;color:var(--muted)}
+.map ol{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.map li button{border:0;background:none;color:var(--accent);font:500 13px var(--body);cursor:pointer;padding:0;text-align:left}
+.map li.cur button{font-weight:700;text-decoration:underline}
+footer{font-size:12px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.scanline{animation:none}.tap,.dot,.toast{transition:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="tag">Concept prototype · Case 2: Recharge engagement</span>
+    <h1>Bill Status Loop</h1>
+    <p>A clickable V1 concept: show recharge-only users their bill status, help them add their first bill, and prove the payment reached the biller. Dummy data throughout. Not an official app screen.</p>
+  </header>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="User scenario">
+      <button id="sc-saved" aria-pressed="true">User with a saved bill</button>
+      <button id="sc-new" aria-pressed="false">User new to bills</button>
+    </div>
+    <div class="seg" role="group" aria-label="Test arm">
+      <button id="arm-A" aria-pressed="true">Arm A: loop</button>
+      <button id="arm-B" aria-pressed="false">Arm B: + voucher</button>
+      <button id="arm-C" aria-pressed="false">Arm C: + late-fee promise</button>
+    </div>
+    <button class="ghost" id="restart">Restart flow</button>
+  </div>
+
+  <div class="journey" id="journey" aria-label="Journey stage">
+    <span data-s="discover">Discover</span><i>→</i><span data-s="try">Try</span><i>→</i><span data-s="regular">Regular use</span><i>→</i><span data-s="trust">Trust</span>
+  </div>
+
+  <div class="stage">
+    <div class="phone"><div class="screen" id="screen" aria-live="polite"></div></div>
+    <aside class="notes" id="notes"></aside>
+  </div>
+
+  <footer>Dates assume today is 12 Nov 2026. Amounts, account numbers and references are invented for the prototype.</footer>
+</div>
+
+<script>
+(function(){
+  var S = {scenario:'saved', arm:'A', screen:'success', paid:false, reminded:false, voucher:null, added:false};
+  var scr = document.getElementById('screen'), notes = document.getElementById('notes');
+  var timers = [];
+  function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var NOTES = {
+    success_saved:{stage:'try',feat:'Specific card after recharge',title:'One relevant ask, not four',
+      before:'"Pay Another Bill" button plus three banners (gold coins, scratch card, referral) on the success screen.',
+      after:'One card for a bill that is actually due, with amount and date, plus the biller\'s own early-payment rebate where the biller offers one. Shown only when a saved bill is due.',
+      why:'Turns the moment of highest attention into one concrete action. Uses only the user\'s own saved bill, so it reads as a reminder, not cross-selling.',
+      src:'Own Paytm app audit, 11 Nov 2026.'},
+    success_new:{stage:'discover',feat:'Scan to add the first bill',title:'Make the first bill one scan',
+      before:'Generic "Pay Another Bill" that leads to a category grid and a consumer-number form.',
+      after:'"Add your electricity bill in 1 scan": scan the bill\'s QR or photograph it, or type the number as a fallback.',
+      why:'Most recharge-only users have no saved biller, so status features never reach them. This is their entry point.',
+      src:'Electricity form audit ("Enter 9 digit Account Number"), 11 Nov 2026.'},
+    scan:{stage:'discover',feat:'Scan to add the first bill',title:'Read the bill, not the user\'s memory',
+      before:'User types a 9 to 12 digit consumer number they rarely know.',
+      after:'Camera reads the QR or printed consumer number and picks the biller automatically.',
+      why:'Removes the step where users stop. Typing stays available.',
+      src:'Assumption to validate: share of bills carrying a readable QR varies by electricity company.'},
+    found:{stage:'try',feat:'Scan to add the first bill',title:'Show the bill before asking for money',
+      before:'After adding, the user sees a payment form or "No Bill Due".',
+      after:'Biller, masked account, amount and due date appear right after the scan.',
+      why:'The first view of a new category is the bill itself, so the next tap is an easy yes.',
+      src:'Bill fetch already runs on tap today (audit, 11 Nov 2026).'},
+    confirm:{stage:'try',feat:'Specific card after recharge',title:'Fee shown before the tap',
+      before:'"₹0 Platform fees" sits in a small chip.',
+      after:'Fee line is explicit in the summary, next to the due date.',
+      why:'Fee fear is a known reason to pay elsewhere, even when the fee is zero.',
+      src:'Audit shows ₹0 fee on electricity; Play Store review cites fees as the reason to switch.'},
+    tracker:{stage:'trust',feat:'Bill tracker with biller confirmation',title:'Prove the biller got it',
+      before:'Recharge already has a 3-step tracker ending in "Awaiting confirmation from Jio". Bills have no equivalent.',
+      after:'Same tracker for bills, ending in "BSES confirmed" with a Bharat Connect reference the user can quote.',
+      why:'Competitor reviews show paid bills still marked unpaid and wrong amounts fetched. Proof is the trust gap.',
+      src:'Recharge tracker (audit, 11 Nov); Google Pay and CRED Play Store reviews, Sep to Oct 2026.'},
+    voucher:{stage:'try',feat:'Voucher test arm (group B only)',title:'Test whether a reward adds anything',
+      before:'Category offers already exist (Flat ₹30 on electricity, 10,000 gold coins), shown to everyone.',
+      after:'One-time voucher, user picks the category, only on the first payment in a new category, only for test group B.',
+      why:'Measures reward lift against the card-only and holdout groups. Fires on the payment event, never on fetched bill data (NBBL rule, Jun 2026).',
+      src:'Friend\'s app audit, 12 Nov 2026; NBBL circular BBPS/006.'},
+    bills:{stage:'regular',feat:'Status on saved bills (catch-up with CRED and Google Pay)',title:'Bills get the status recharge already has',
+      before:'Mobile row: "Plan expires tomorrow". Electricity and credit card rows: "Added on 28 May", status only after a tap. CRED and Google Pay already show amount and due date.',
+      after:'A "bills due" summary on top, then every row says what to do: amount and due date, paid and confirmed, or nothing due with the next expected date.',
+      why:'Closes a gap competitors have already closed, and gives users a reason to open the list each month. The data is already fetched; this only shows it.',
+      src:'Two Paytm audits (11 and 12 Nov 2026); CRED, Google Pay and PhonePe screenshots (12 Nov 2026).'},
+    nothing:{stage:'regular',feat:'"No Bill Due" fix',title:'A dead end becomes a reminder',
+      before:'"No Bill Due" with "Pay in Advance" and "Setup Automatic Payments". No reason, no next date.',
+      after:'"Nothing due right now", the expected next bill date, and one tap to be reminded when it arrives.',
+      why:'Keeps the user in the loop for next month instead of asking for money they do not owe.',
+      src:'Own app audit, both saved BSES accounts, 11 Nov 2026.'}
+  };
+
+  function orderList(){
+    var v = S.arm==='B' ? [['voucher','Voucher (arm B)']] : [];
+    return S.scenario==='saved'
+      ? [['success','Recharge succeeds'],['confirm','Confirm payment'],['tracker','Bill tracker']].concat(v,[['bills','My Bills list'],['nothing','Nothing due']])
+      : [['success','Recharge succeeds'],['scan','Scan the bill'],['found','Bill found'],['confirm','Confirm payment'],['tracker','Bill tracker']].concat(v,[['bills','My Bills list']]);
+  }
+  var ARM_NOTE = {
+    A:'',
+    B:'Test arm B: after the first payment in a new category, the user picks a one-time ₹50 voucher. It pays back only if partners fund at least about 55% of it.',
+    C:'Test arm C: late-fee promise. If the user pays at least 2 days before the due date and the biller posts late and adds a late fee, Paytm refunds it (cap ₹100, 30-day claim window). Fills a gap RBI refund rules do not cover.'
+  };
+
+  function key(){ return S.screen==='success' ? 'success_'+S.scenario : S.screen; }
+
+  function status(){ return '<div class="sbar"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>'; }
+  function top(title, backTo){ return '<div class="top">'+(backTo?'<button class="back" data-go="'+backTo+'" aria-label="Back">←</button>':'')+'<b>'+title+'</b></div>'; }
+
+  function homeBillAmount(){ return '₹1,240'; }
+
+  var R = {
+    success: function(){
+      var card = S.scenario==='saved'
+        ? '<div class="card hero tap" data-go="confirm" role="button" tabindex="0">'+
+            '<div class="row"><div class="logo l-ele">BSES</div><div class="grow"><div class="t1">Electricity · Home</div><div class="t2">BSES Rajdhani</div></div><span class="chip c-due">Due in 3 days</span></div>'+
+            '<div class="row" style="margin-top:12px;justify-content:space-between;align-items:flex-end"><div><div class="t2">Bill amount</div><div class="amt">₹1,240</div><div class="t2">Due 15 Nov</div><div class="rebate">Pay by 14 Nov, save ₹12 · BSES early-payment rebate</div></div></div>'+
+            '<button class="btn" style="margin-top:12px" data-go="confirm">Pay ₹1,240</button></div>'+
+          '<button class="link" data-go="bills">See all your bills →</button>'
+        : '<div class="card hero">'+
+            '<div class="row"><div class="logo l-ele">⚡</div><div class="grow"><div class="t1">Pay electricity here too</div><div class="t2">Add your bill in 1 scan. No consumer number needed.</div></div></div>'+
+            '<button class="btn" style="margin-top:12px" data-go="scan">Scan your bill</button>'+
+            '<div class="row" style="margin-top:8px;justify-content:center;gap:16px"><button class="link" data-go="scan">Upload a photo</button><button class="link" data-go="found">Type the number</button></div></div>';
+      return status()+top('',null)+
+        '<div class="body">'+
+          '<div class="card center"><div class="check">✓</div><div class="t1" style="font-size:17px">Mobile recharge successful</div><div class="t2">Airtel ·••••3678 · ₹349 · valid till 10 Dec</div></div>'+
+          card+
+        '</div>';
+    },
+    scan: function(){
+      return status()+top('Scan your bill','success')+
+        '<div class="body">'+
+          '<div class="viewfinder"><div class="bill"><b style="font-size:11px">ELECTRICITY BILL · NOV 2026</b><span>Consumer no. ••••• 5525</span><span>Amount payable ₹1,240</span><span>Due date 15.11.2026</span><div class="qr" aria-hidden="true"></div></div>'+
+          '<span class="corner c1"></span><span class="corner c2"></span><span class="corner c3"></span><span class="corner c4"></span><span class="scanline"></span></div>'+
+          '<div class="t2 center">Point at the QR code or the consumer number on your bill</div>'+
+          '<button class="btn" data-go="found">Simulate scan</button>'+
+        '</div>';
+    },
+    found: function(){
+      return status()+top('Bill found','scan')+
+        '<div class="body">'+
+          '<div class="card"><div class="row"><div class="logo l-ele">BSES</div><div class="grow"><div class="t1">BSES Rajdhani</div><div class="t2">Consumer no. ••••• 5525</div></div><span class="chip c-ok">Found</span></div></div>'+
+          '<div class="card"><div class="t2">Current bill</div><div class="amt">₹1,240</div><div class="row" style="justify-content:space-between"><span class="t2">Due 15 Nov 2026</span><span class="chip c-due">Due in 3 days</span></div><div class="rebate">Pay by 14 Nov, save ₹12 · BSES early-payment rebate</div></div>'+
+          '<div class="card"><div class="t2" style="margin-bottom:6px">Save as</div><div class="row" style="gap:6px;flex-wrap:wrap"><span class="chip c-info" style="background:var(--app-blue-soft);color:var(--app-blue)">Home ✓</span><span class="chip c-info">Mom</span><span class="chip c-info">Office</span></div></div>'+
+          '<button class="btn" data-go="confirm">Pay ₹1,240</button>'+
+          '<div class="muted-strip">Saved bills show their status every month. You can remove it anytime.</div>'+
+        '</div>';
+    },
+    confirm: function(){
+      return status()+top('Pay electricity bill', S.scenario==='saved'?'success':'found')+
+        '<div class="body">'+
+          '<div class="card"><div class="row"><div class="logo l-ele">BSES</div><div class="grow"><div class="t1">BSES Rajdhani · Home</div><div class="t2">Consumer no. ••••• 5525</div></div></div></div>'+
+          '<div class="card">'+
+            '<div class="row" style="justify-content:space-between"><span class="t2">Bill amount</span><b>₹1,240</b></div>'+
+            '<div class="row" style="justify-content:space-between;margin-top:8px"><span class="t2">Platform fee</span><b>₹0</b></div>'+
+            '<div class="row" style="justify-content:space-between;margin-top:8px"><span class="t2">Due date</span><b>15 Nov 2026</b></div>'+
+            '<hr style="border:0;border-top:1px solid var(--app-line);margin:12px 0">'+
+            '<div class="row" style="justify-content:space-between"><b>Total</b><b style="font-size:18px">₹1,240</b></div>'+
+            '<div class="rebate">Paying today: BSES credits a ₹12 early-payment rebate on your next bill</div>'+
+          '</div>'+
+          (S.arm==='C' ? '<div class="promise"><span class="armtag">Test arm C</span><b>Late-fee promise</b>You are paying 3 days before the due date. If BSES posts this payment late and adds a late fee, Paytm refunds it, up to ₹100.</div>' : '')+
+          '<div style="flex:1"></div>'+
+          '<button class="btn" id="paynow">Pay ₹1,240 via UPI</button>'+
+        '</div>';
+    },
+    tracker: function(){
+      return status()+top('Payment status',null)+
+        '<div class="body">'+
+          '<div class="card"><div class="row"><div class="logo l-ele">BSES</div><div class="grow"><div class="t1">₹1,240 · BSES Rajdhani</div><div class="t2">Home · paid 12 Nov, 4:12 PM</div></div></div></div>'+
+          '<div class="card"><div class="steps">'+
+            '<div class="step" id="st1"><div class="dot">✓</div><div><div class="t1">Money received</div><div class="t2">Debited from your bank account</div></div></div>'+
+            '<div class="step" id="st2"><div class="dot">✓</div><div><div class="t1">Sent to BSES</div><div class="t2">Via Bharat Connect</div></div></div>'+
+            '<div class="step" id="st3"><div class="dot">✓</div><div><div class="t1">BSES confirmed</div><div class="t2" id="st3t">Waiting for BSES to post the payment</div></div></div>'+
+          '</div>'+
+          '<div class="ref" id="refbox" hidden>Bharat Connect ref: BC2611128847201<br>Quote this if BSES still shows the bill as due.</div></div>'+
+          (S.arm==='C' ? '<div class="promise"><span class="armtag">Test arm C</span><b>Late-fee promise is active</b>If BSES adds a late fee for this payment, Paytm refunds it automatically on your next bill check (up to ₹100).</div>' : '')+
+          '<div style="flex:1"></div>'+
+          '<button class="btn" id="trkNext" hidden>Done</button>'+
+        '</div>';
+    },
+    voucher: function(){
+      var opts=['Food delivery','Rides','Groceries','Shopping','Movies','Travel'];
+      return status()+top('A thank-you for your first bill',null)+
+        '<div class="body">'+
+          '<div class="card hero center"><div class="t1" style="font-size:17px">First electricity bill on Paytm</div><div class="t2">Pick a ₹50 voucher for an app category you use. One time only.</div></div>'+
+          '<div class="vouchers" role="group" aria-label="Voucher category">'+opts.map(function(o){return '<button data-v="'+o+'" aria-pressed="'+(S.voucher===o)+'">'+o+'</button>';}).join('')+'</div>'+
+          '<div class="muted-strip">Shown only to test group B, to measure whether a reward adds lift.</div>'+
+          '<div style="flex:1"></div>'+
+          '<button class="btn" data-go="bills" id="vNext">'+(S.voucher?'Claim and see my bills':'Skip and see my bills')+'</button>'+
+        '</div>';
+    },
+    bills: function(){
+      var home = S.paid
+        ? '<span class="chip c-ok">Paid ₹1,240 · BSES confirmed</span>'
+        : '<span class="chip c-due">₹1,240 due 15 Nov</span>';
+      var mom = S.reminded
+        ? '<span class="chip c-info">Reminder set for ~5 Dec</span>'
+        : '<span class="chip c-info">Nothing due · next bill ~5 Dec</span>';
+      var rows =
+        '<div class="card tap" role="button" tabindex="0" data-go="success"><div class="row"><div class="logo l-mob">AIR</div><div class="grow"><div class="t1">Mobile · My number</div><span class="chip c-ok">Plan valid till 10 Dec</span></div><span class="t2">›</span></div></div>'+
+        '<div class="card tap" role="button" tabindex="0" data-go="'+(S.paid?'tracker':'confirm')+'"><div class="row"><div class="logo l-ele">BSES</div><div class="grow"><div class="t1">Electricity · Home</div>'+home+'</div><span class="t2">›</span></div></div>';
+      if(S.scenario==='saved'){
+        rows +=
+        '<div class="card tap" role="button" tabindex="0" data-go="nothing"><div class="row"><div class="logo l-ele">BSES</div><div class="grow"><div class="t1">Electricity · Mom</div>'+mom+'</div><span class="t2">›</span></div></div>'+
+        '<div class="card"><div class="row"><div class="logo l-cc">CC</div><div class="grow"><div class="t1">Credit card ·••• 4821</div><span class="chip c-due">₹18,420 due 18 Nov</span></div><span class="t2">›</span></div></div>';
+      }
+      var dueN, dueAmt;
+      if(S.scenario==='saved'){ dueN = S.paid?1:2; dueAmt = S.paid?'₹18,420':'₹19,660'; }
+      else { dueN = S.paid?0:1; dueAmt = '₹1,240'; }
+      var head = dueN>0
+        ? '<div class="sumhead"><div class="t2">₹0 platform fee on bills</div><div style="font:700 19px var(--body);margin-top:2px">You have '+dueN+' bill'+(dueN>1?'s':'')+' due worth '+dueAmt+'</div></div>'
+        : '<div class="sumhead"><div class="t2">₹0 platform fee on bills</div><div style="font:700 19px var(--body);margin-top:2px">All your bills are paid ✓</div></div>';
+      return status()+top('My Bills & Recharges',null)+
+        '<div class="body">'+head+'<div class="sec-h">Your bills</div>'+rows+
+        '<div class="muted-strip">Status updates when your biller issues or confirms a bill.</div></div>';
+    },
+    nothing: function(){
+      return status()+top('Electricity · Mom','bills')+
+        '<div class="body">'+
+          '<div class="card"><div class="row"><div class="logo l-ele">BSES</div><div class="grow"><div class="t1">BSES Rajdhani</div><div class="t2">Consumer no. ••••• 6577</div></div></div></div>'+
+          '<div class="card center"><div class="t1" style="font-size:18px">Nothing due right now</div><div class="t2" style="margin-top:4px">BSES has no open bill for this account.</div>'+
+            '<div class="card" style="margin-top:12px;background:#f7f9fc"><div class="t2">Next bill expected around</div><div class="amt" style="font-size:22px">5 Dec 2026</div><div class="t2">Based on this account\'s billing cycle</div></div></div>'+
+          '<div style="flex:1"></div>'+
+          '<button class="btn" id="remind">'+(S.reminded?'Reminder set ✓':'Remind me when it arrives')+'</button>'+
+          '<button class="link" style="align-self:center">Pay in advance</button>'+
+        '</div><div class="toast" id="toast">We\'ll remind you when BSES issues the next bill.</div>';
+    }
+  };
+
+  function renderNotes(){
+    var n = NOTES[key()];
+    var order = orderList();
+    var armNote = (S.arm!=='A' && ['confirm','tracker','voucher'].indexOf(S.screen)>-1 && !(S.arm==='B' && S.screen!=='voucher')) ? '<p class="why" style="border-left:3px solid var(--accent);padding-left:10px">'+ARM_NOTE[S.arm]+'</p>' : '';
+    notes.innerHTML = armNote +
+      '<div><span class="feat">'+n.feat+'</span></div>'+
+      '<h2>'+n.title+'</h2>'+
+      '<div class="cmp"><div><h3>Today</h3>'+n.before+'</div><div><h3>V1 concept</h3>'+n.after+'</div></div>'+
+      '<p class="why">'+n.why+'</p>'+
+      '<p class="src">Evidence: '+n.src+'</p>'+
+      '<div class="map">Screens in this flow<ol>'+order.map(function(o){
+        return '<li class="'+(o[0]===S.screen?'cur':'')+'"><button data-jump="'+o[0]+'">'+o[1]+'</button></li>';}).join('')+'</ol></div>';
+    document.querySelectorAll('#journey span').forEach(function(sp){ sp.classList.toggle('on', sp.dataset.s===n.stage); });
+  }
+
+  function render(){
+    clearTimers();
+    scr.innerHTML = R[S.screen]();
+    renderNotes();
+    if(S.screen==='tracker') runTracker();
+  }
+
+  function go(to){ S.screen = to; render(); scr.querySelector('.body') && (scr.querySelector('.body').scrollTop=0); }
+
+  function runTracker(){
+    var ids=['st1','st2','st3'];
+    function finish(){
+      document.getElementById('st3t').textContent='Payment posted to your account on 12 Nov, 4:13 PM';
+      document.getElementById('refbox').hidden=false;
+      var b=document.getElementById('trkNext'); b.hidden=false;
+      S.paid=true;
+    }
+    if(reduce){ ids.forEach(function(i){document.getElementById(i).classList.add('done');}); finish(); return; }
+    ids.forEach(function(i,k){ timers.push(setTimeout(function(){ var el=document.getElementById(i); if(el) el.classList.add('done'); if(k===2) finish(); }, 500+k*900)); });
+  }
+
+  scr.addEventListener('click', function(e){
+    var t = e.target.closest('[data-go],[data-v],#paynow,#remind,#trkNext');
+    if(!t) return;
+    if(t.id==='paynow'){ go('tracker'); return; }
+    if(t.id==='trkNext'){ go(S.arm==='B' && !S.voucherSeen ? (S.voucherSeen=true,'voucher') : 'bills'); return; }
+    if(t.id==='remind'){ S.reminded=true; t.textContent='Reminder set ✓'; var ts=document.getElementById('toast'); ts.classList.add('show'); timers.push(setTimeout(function(){ts.classList.remove('show');},2200)); return; }
+    if(t.dataset.v){ S.voucher=t.dataset.v; scr.querySelectorAll('.vouchers button').forEach(function(b){b.setAttribute('aria-pressed', String(b.dataset.v===S.voucher));}); document.getElementById('vNext').textContent='Claim and see my bills'; return; }
+    if(t.dataset.go){ e.stopPropagation(); go(t.dataset.go); }
+  });
+  scr.addEventListener('keydown', function(e){ if((e.key==='Enter'||e.key===' ') && e.target.matches('[role="button"][data-go]')){ e.preventDefault(); go(e.target.dataset.go); } });
+  notes.addEventListener('click', function(e){ var b=e.target.closest('[data-jump]'); if(b){ if(b.dataset.jump==='bills'||b.dataset.jump==='nothing'){} go(b.dataset.jump); } });
+
+  function setArm(a){
+    S.arm=a;
+    ['A','B','C'].forEach(function(x){ document.getElementById('arm-'+x).setAttribute('aria-pressed', String(x===a)); });
+    setScenario(S.scenario);
+  }
+  document.getElementById('arm-A').onclick=function(){setArm('A');};
+  document.getElementById('arm-B').onclick=function(){setArm('B');};
+  document.getElementById('arm-C').onclick=function(){setArm('C');};
+  function setScenario(s){
+    S={scenario:s,arm:S.arm||'A',screen:'success',paid:false,reminded:false,voucher:null,voucherSeen:false};
+    document.getElementById('sc-saved').setAttribute('aria-pressed', String(s==='saved'));
+    document.getElementById('sc-new').setAttribute('aria-pressed', String(s==='new'));
+    render();
+  }
+  document.getElementById('sc-saved').onclick=function(){setScenario('saved');};
+  document.getElementById('sc-new').onclick=function(){setScenario('new');};
+  document.getElementById('restart').onclick=function(){setScenario(S.scenario);};
+  render();
+})();
+</script>
+
+</body></html>
